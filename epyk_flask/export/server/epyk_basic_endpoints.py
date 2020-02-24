@@ -5,7 +5,6 @@ import os
 app = epyk_engine.register(__name__)
 flask_app = epyk_engine.engine_app.app
 
-@epyk_engine.linked_script
 @epyk_engine.config_required
 @app.route("/")
 @app.route("/index")
@@ -21,7 +20,6 @@ def index():
     print(traceback.format_exc())
     return 'FAIL', 500
 
-@epyk_engine.linked_script
 @epyk_engine.config_required
 @app.route("/run/<folder_name>", defaults={'script_name': 'index'}, methods=['GET'])
 @app.route("/run/<folder_name>/<script_name>", methods=['GET'])

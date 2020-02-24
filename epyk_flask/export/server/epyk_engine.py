@@ -6,13 +6,21 @@ class MissingEpykFlaskConfigException(Exception):
   """Exception to be raised when the configuration is missing"""
   pass
 
-class MissingAttrConfig(Exception):
+
+class MissingAttrConfigException(Exception):
   """Exception to be raised when an attribute is missing from the configuration"""
   pass
+
 
 class MissingRptObjException(Exception):
   """Exception to be raised when the REPORT_OBJECT attribute is missing from a script to be run"""
   pass
+
+
+class MissingScriptException(Exception):
+  """Exception when a script specified couldn't be found in any repository"""
+  pass
+
 
 def init(config_path=None):
   global config
@@ -25,8 +33,8 @@ def init(config_path=None):
       config = yaml.load(f, Loader=yaml.FullLoader)
 
   engine_app = importlib.import_module(config['server_interface'])
-  for repo in config['repos']:
-    sys.path.append(repo['path'])
+  for repo, repo_attr in config['repos'].items():
+    sys.path.append(repo_attr['path'])
   for path in config['endpoints']['path']:
     sys.path.append(path)
 
@@ -46,7 +54,7 @@ def parse_config(attr, config):
   attr_len = len(attr)
   if attr_len != 0:
     if attr[0] not in config:
-      raise MissingAttrConfig('Missing attribute %s from configuration' % attr)
+      raise MissingAttrConfigException('Missing attribute %s from configuration' % attr)
 
     if attr_len > 1:
       parse_config(attr[1], config[attr[0]])
@@ -68,16 +76,43 @@ def config_required(*dec_args):
 
   return wrap
 
+def find_script(folder_name, script_name):
+  file_path = os.path.join(config['default_repo']['path'], folder_name, script_name)
+  if os.path.exists(file_path):
+    return file_path
+
+  else:
+    for repo, repo_attr in config['repos'].items():
+      file_path = os.path.join(repo_attr['path'], folder_name, script_name)
+      if os.path.exists(file_path):
+        return file_path
+
+  return None
+
+
 def run_script(folder_name, script_name):
   """
   """
-  print(script_name)
+  print('tutu')
   if not script_name.endswith('.py'):
     full_name = '%s.py' % script_name
   else:
     full_name = script_name
     script_name = script_name.replace('.py', '')
-  print(sys.path)
+
+  file_path = find_script(folder_name, full_name)
+  print(file_path)
+  if file_path:
+    script_hash = hash_content(file_path)
+    output_name = '%s_%s_%s' % (folder_name, script_name, script_hash)
+    output_path = os.path.join(config['html_output'], 'html', '%s.html' % output_name)
+    print(output_path)
+    if os.path.exists(output_path):
+      print('tata')
+      return output_path
+  else:
+    raise MissingScriptException('Script is missing from the repository configured %s/%s' % (folder_name, script_name))
+
   mod = importlib.import_module('%s.%s' % (folder_name, script_name))
   rptObj = getattr(mod, 'REPORT_OBJECT', False)
   if not rptObj:
@@ -87,8 +122,6 @@ def run_script(folder_name, script_name):
   if getattr(mod, 'CONTROLLED_ACCESS', False):
     controlLevel = getattr(mod, 'CONTROLLED_LEVEL', 'ENV').upper()
 
-  script_hash = hash_content(os.path.join(os.path.abspath(os.path.dirname(mod.__name__)), full_name))
-  output_name = '%s_%s_%s' % (folder_name, script_name, script_hash)
   rptObj.outs.html_file(path=config['html_output'], name=output_name)
   return os.path.join(config['html_output'], 'html', output_name)
 
@@ -97,30 +130,3 @@ def register(*args):
   return engine_app.engine_register(*args)
 
 
-def linked_script(folder_name='root', script_name='index'):
-  """"""
-  def wrap(func):
-
-    def inner(*args, **kwargs):
-      script_hash = ''
-      file_path = os.path.join(config['main_repo']['path'], folder_name, script_name)
-      if os.path.exists(file_path):
-        script_hash = hash_content(file_path)
-      else:
-        for repo in config['repos']:
-          file_path = os.path.join(repo['path'], folder_name, script_name)
-          if os.path.exists(file_path):
-            script_hash = hash_content(file_path)
-            break
-
-      output_file = os.path.join(config['html_output'], '%s_%s_%s.html' % (folder_name, script_name, script_hash))
-      if os.path.exists(output_file):
-        with open(output_file, 'r') as f:
-          data = f.read()
-        return data
-
-      return func(*args, **kwargs)
-
-    return inner
-
-  return wrap
